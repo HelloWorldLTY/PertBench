@@ -24,16 +24,17 @@ def main():
     # See: https://a2a-protocol.org/latest/tutorials/python/3-agent-skills-and-card/
     
     skill = AgentSkill(
-        id="",
-        name="",
-        description="",
-        tags=[],
-        examples=[]
+        id="general_multi_template_qa_evaluator",
+        name="General Multi-Template QA Evaluation",
+        description="Evaluates QA agents using a benchmark spec (JSON) and ground-truth data (CSV). Computes majority-vote prediction, validity under a minimum-valid threshold, and template robustness metrics (consistency, ambiguous/tie rate, invalid rate, etc.). Outputs detailed per-unit results and a summary artifact for downstream analysis.",
+        tags=["qa", "evaluation", "benchmark", "robustness", "templates", "majority-vote", "a2a"],
+        examples=["Evaluate participant agents on a binary QA benchmark with several paraphrase templates, majority vote, and consistency.", 
+                  "Evaluate participant agents on a CSV of question-answer pairs with strict output parsing."]
     )
 
     agent_card = AgentCard(
-        name="",
-        description="",
+        name="Multi-Template QA Evaluator",
+        description="A general-purpose Green agent for QA benchmarking. It reads a JSON benchmark specification and a ground-truth dataset, queries participant agents, and produces reproducible evaluation artifacts.",
         url=args.card_url or f"http://{args.host}:{args.port}/",
         version='1.0.0',
         default_input_modes=['text'],
