@@ -1,0 +1,12 @@
+[green_agent]
+endpoint = "http://127.0.0.1:19009"
+cmd = "./src/start_green.sh"
+
+[[participants]]
+role = "qa_agent"
+endpoint = "http://127.0.0.1:19010"
+cmd = "./src/start_purple.sh"
+
+[config]
+dataset = "all"
+max_units = 5

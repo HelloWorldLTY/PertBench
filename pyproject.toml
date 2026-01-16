@@ -1,0 +1,13 @@
+[project]
+name = "sciagent-runner"
+version = "0.1.0"
+description = "Runner for SciAgent scenarios"
+requires-python = ">=3.13"
+dependencies = [
+  "a2a-sdk[http-server]>=0.3.20",
+  "httpx>=0.28.1",
+  "python-dotenv>=1.0.1",
+]
+
+[tool.uv]
+package = false

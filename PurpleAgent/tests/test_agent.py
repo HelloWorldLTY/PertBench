@@ -197,58 +197,46 @@ async def test_message(agent, streaming):
     assert not all_errors, f"Message validation failed:\n" + "\n".join(all_errors)
 
 # Add your custom tests here
-# -----------------------------
-# Custom evaluator logic tests
-# -----------------------------
 
-from agent import parse_final_answer, aggregate_unit  # adjust if your module path differs
+import re
 
-YES = "Yes"
-NO = "No"
-INVALID = "invalid"
-AMBIGUOUS = "Ambiguous"
+_FINAL = re.compile(r"Final\s*Answer\s*:\s*(Yes|No)\b", re.IGNORECASE)
 
+@pytest.mark.asyncio
+async def test_purple_returns_final_answer_format(agent):
+    q = "Reply strictly with 'Final Answer: Yes' or 'Final Answer: No'. Is 1+1 equal to 2?"
+    events = await send_text_message(q, agent, streaming=False)
 
-def test_parse_final_answer_basic():
-    assert parse_final_answer("Final Answer: Yes") == YES
-    assert parse_final_answer("Final Answer: No") == NO
+    # Collect any agent text parts from Message OR StatusUpdate.message
+    texts = []
 
+    def _collect_from_message(msg):
+        if not msg:
+            return
+        for part in msg.parts:
+            if isinstance(part.root, TextPart):
+                texts.append(part.root.text)
 
-def test_parse_final_answer_case_and_noise():
-    assert parse_final_answer("some text\nfinal answer: YES\nmore text") == YES
-    assert parse_final_answer("FINAL   ANSWER:    no") == NO
-    assert parse_final_answer("I think yes but not in required format") == INVALID
+    for event in events:
+        match event:
+            case Message() as msg:
+                _collect_from_message(msg)
 
+            case (task, update):
+                if task and hasattr(task, "status") and getattr(task.status, "message", None):
+                    _collect_from_message(task.status.message)
 
-def test_parse_final_answer_last_match_wins():
-    text = "Final Answer: No\n... later ...\nFinal Answer: Yes"
-    assert parse_final_answer(text) == YES
+                if update is None:
+                    continue
 
+                if hasattr(update, "status") and getattr(update.status, "message", None):
+                    _collect_from_message(update.status.message)
+                elif hasattr(update, "message") and update.message:
+                    _collect_from_message(update.message)
 
-def test_aggregate_unit_majority_and_consistency():
-    preds = [NO, YES, NO, NO, NO, YES, NO, NO, NO, NO]  # No=8 Yes=2 valid=10
-    out = aggregate_unit(preds, gold=YES, min_valid=5, tie_policy=AMBIGUOUS)
-    assert out["counts"]["valid"] == 10
-    assert out["is_covered"] is True
-    assert out["majority_label"] == NO
-    assert out["consistency"] == 0.8
-    assert out["majority_correct"] is False
-
-
-def test_aggregate_unit_tie_is_ambiguous_and_incorrect():
-    preds = [YES, NO] * 5  # 5 vs 5
-    out = aggregate_unit(preds, gold=YES, min_valid=5, tie_policy=AMBIGUOUS)
-    assert out["is_covered"] is True
-    assert out["majority_label"] == AMBIGUOUS
-    assert out["is_ambiguous"] is True
-    assert out["majority_correct"] is False
-    assert out["consistency"] == 0.5
-
-
-def test_aggregate_unit_min_valid_gating():
-    preds = [INVALID] * 10  # valid=0
-    out = aggregate_unit(preds, gold=YES, min_valid=5, tie_policy=AMBIGUOUS)
-    assert out["counts"]["valid"] == 0
-    assert out["is_covered"] is False
-    assert out["majority_label"] is None
-    assert out["majority_correct"] is False
+            case _:
+                # Some SDK variants may yield Task directly
+                if hasattr(event, "status") and getattr(event.status, "message", None):
+                    _collect_from_message(event.status.message)
+    joined = "\n".join(texts)
+    assert _FINAL.search(joined), f"Purple did not return a parsable Final Answer. Got:\n{joined}"

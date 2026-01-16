@@ -9,11 +9,6 @@ def pytest_addoption(parser):
         help="Agent URL (default: http://localhost:9009)",
     )
 
-def pytest_addoption(parser):
-    parser.addoption("--agent-url", default="http://localhost:9009", help="Green agent URL")
-    parser.addoption("--purple-url", default="http://localhost:9010", help="Purple agent URL")
-    parser.addoption("--max-units", type=int, default=1, help="Max units for smoke test")
-
 
 @pytest.fixture(scope="session")
 def agent(request):
@@ -28,11 +23,3 @@ def agent(request):
         pytest.exit(f"Could not connect to agent at {url}: {e}", returncode=1)
 
     return url
-
-@pytest.fixture(scope="session")
-def purple(request):
-    return request.config.getoption("--purple-url")
-
-@pytest.fixture(scope="session")
-def max_units(request):
-    return request.config.getoption("--max-units")

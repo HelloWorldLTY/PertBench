@@ -1,0 +1,34 @@
+{
+  "task_name": "double_perturbation_significance_analysis",
+  "input_mode": "structured",  
+  "unit_selection": "random",
+  "random_seed": 42,
+  "keys": ["cell_line", "source_a", "source_b", "target"],
+  "min_valid_answers_per_unit": 8,
+  "model_input": [
+    "You are an expert in single-cell biology and functional genomics. In {cell_line} cells, {source_a} and {source_b} are perturbed and the expression of {target} is measured. Does this perturbation cause a significant change in {target} expression? Answer strictly in the format 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are a domain expert in functional genomics. For experiments carried out in {cell_line} cells, we perturb {source_a} and {source_b} and examine the expression of {target}. Does this perturbation lead to a significant change in {target} expression? Reply only with 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are assisting with the interpretation of perturbation-based expression data. In {cell_line} cells, {source_a} and {source_b} are perturbed and {target} expression is quantified. Does this perturbation result in a significant change in {target} expression compared with control cells? Respond exactly as 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are an expert in regulatory genomics. Consider data from {cell_line} cells in which {source_a} and {source_b} are perturbed and {target} expression is observed. Does this perturbation lead to a significant difference in {target} expression relative to control conditions? Answer strictly with 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are a specialist in gene perturbation experiments. In {cell_line} cells, we introduce a perturbation to {source_a} and {source_b} and then measure expression of {target}. Does this perturbation cause a significant change in {target} expression? Reply only in the form 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are an expert in gene expression analysis. For {cell_line} cells, assess whether perturbation of {source_a} and {source_b} is associated with a significant change in {target} expression compared with unperturbed controls. Answer strictly as 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are a genomics expert evaluating perturbation experiments. In {cell_line} cells, {source_a} and {source_b} are perturbed and the expression of {target} is measured. Determine whether {target} shows a significant expression change under this perturbation. Respond exactly with 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are an expert analyst of perturbation datasets. For {cell_line} cells subjected to perturbation of {source_a} and {source_b}, does the expression profile of {target} indicate a significant change relative to control conditions? Reply strictly with 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are a functional genomics specialist. In {cell_line} cells, we perturb {source_a} and {source_b} and monitor {target} expression. Decide whether this perturbation leads to a significant alteration in {target} expression. Answer only in the format 'Final Answer: Yes' or 'Final Answer: No'.",
+
+    "You are an expert in gene regulation studies. For experiments performed in {cell_line} cells, {source_a} and {source_b} are perturbed and {target} expression is measured. Determine whether {target} exhibits a significant expression change under this perturbation. Respond exactly with 'Final Answer: Yes' or 'Final Answer: No'."
+  ],
+  "response": [
+    "Final Answer: {yes_or_no}"
+  ],
+  "tie": "Ambiguous",
+  "gold_label": "level"
+}
