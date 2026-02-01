@@ -2,6 +2,7 @@ import asyncio
 import csv
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -49,6 +50,8 @@ DATASET_REGISTRY: dict[str, dict[str, str]] = {
 }
 
 
+
+
 def project_root() -> Path:
     # src/agent.py -> project root is parent of src
     return Path(__file__).resolve().parents[1]
@@ -58,7 +61,66 @@ def resolve_path(p: str) -> Path:
     pp = Path(p)
     if pp.is_absolute():
         return pp
+
+    # Prefer container standard layout if present
+    container_base = Path("/home/agent")
+    candidate = container_base / pp
+    if candidate.exists():
+        return candidate
+
     return project_root() / pp
+
+#-------- helper functions --------#
+def _bool(cfg: Dict[str, Any], key: str, default: bool) -> bool:
+    v = cfg.get(key, default)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in {"1", "true", "yes", "y", "on"}
+    if isinstance(v, (int, float)):
+        return bool(v)
+    return default
+
+
+def make_run_dir(cfg: Dict[str, Any]) -> Path:
+    """
+    Create a per-run output directory.
+    cfg:
+      output_dir: base output directory (default: "artifacts")
+      run_id: optional stable run id (otherwise auto-generated)
+    """
+    base = str(cfg.get("output_dir") or "artifacts")
+    run_id = str(cfg.get("run_id") or uuid4().hex[:8])
+    run_dir = resolve_path(base) / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
+def write_text(run_dir: Path, name: str, text: str) -> None:
+    p = run_dir / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+
+
+def write_json(run_dir: Path, name: str, obj: Any) -> None:
+    write_text(run_dir, name, json.dumps(obj, ensure_ascii=False, indent=2))
+
+
+def pick_primary_role(participants: Dict[str, str], default_role: str = "qa_agent") -> str:
+    """
+    Prefer:
+      1) if only one participant -> use its key
+      2) else if default_role exists -> use it
+      3) else -> first key (stable enough for single-run)
+    """
+    keys = list(participants.keys())
+    if len(keys) == 1:
+        return keys[0]
+    if default_role in participants:
+        return default_role
+    return keys[0] if keys else default_role
+# ---------------------------------- #
+
 
 def _available_datasets_str() -> str:
     return ", ".join(sorted(DATASET_REGISTRY.keys()))
@@ -215,28 +277,28 @@ def parse_usage_json(text: str) -> Dict[str, Any]:
 
     return {"model": model, "input_tokens": in_tok, "output_tokens": out_tok, "total_tokens": tot_tok}
 
-def get_pricing(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Returns pricing config for cost estimation.
-    cfg may contain:
-      cfg["pricing"] = {"currency":"USD","input_per_1m":0.30,"output_per_1m":1.20}
-    Defaults are estimates for gpt-4o-mini (standard).
-    """
-    pricing = cfg.get("pricing")
-    if isinstance(pricing, dict):
-        currency = str(pricing.get("currency") or "USD")
-        input_per_1m = float(pricing.get("input_per_1m", 0.30))
-        output_per_1m = float(pricing.get("output_per_1m", 1.20))
-        return {"currency": currency, "input_per_1m": input_per_1m, "output_per_1m": output_per_1m}
+# def get_pricing(cfg: Dict[str, Any]) -> Dict[str, Any]:
+#     """
+#     Returns pricing config for cost estimation.
+#     cfg may contain:
+#       cfg["pricing"] = {"currency":"USD","input_per_1m":0.30,"output_per_1m":1.20}
+#     Defaults are estimates for gpt-4o-mini (standard).
+#     """
+#     pricing = cfg.get("pricing")
+#     if isinstance(pricing, dict):
+#         currency = str(pricing.get("currency") or "USD")
+#         input_per_1m = float(pricing.get("input_per_1m", 0.30))
+#         output_per_1m = float(pricing.get("output_per_1m", 1.20))
+#         return {"currency": currency, "input_per_1m": input_per_1m, "output_per_1m": output_per_1m}
 
-    return {"currency": "USD", "input_per_1m": 0.30, "output_per_1m": 1.20}
+#     return {"currency": "USD", "input_per_1m": 0.30, "output_per_1m": 1.20}
 
 
-def estimate_cost_usd(input_tokens: int, output_tokens: int, pricing: Dict[str, Any]) -> float:
-    """Estimated cost based on tokens and provided pricing (per 1M tokens)."""
-    in_rate = float(pricing.get("input_per_1m", 0.0))
-    out_rate = float(pricing.get("output_per_1m", 0.0))
-    return (input_tokens / 1_000_000.0) * in_rate + (output_tokens / 1_000_000.0) * out_rate
+# def estimate_cost_usd(input_tokens: int, output_tokens: int, pricing: Dict[str, Any]) -> float:
+#     """Estimated cost based on tokens and provided pricing (per 1M tokens)."""
+#     in_rate = float(pricing.get("input_per_1m", 0.0))
+#     out_rate = float(pricing.get("output_per_1m", 0.0))
+#     return (input_tokens / 1_000_000.0) * in_rate + (output_tokens / 1_000_000.0) * out_rate
 
 
 def normalize_gold(g: str) -> str:
@@ -324,12 +386,22 @@ def _collect_texts_from_events(events: List[Any]) -> str:
 
     return "\n".join([t for t in texts if t]).strip()
 
+def _consistency_metrics(yes_count: int, no_count: int) -> tuple[float, int, float]:
+    # agreement: majority share among valid answers
+    valid_count = yes_count + no_count
+    if valid_count <= 0:
+        return 0.0, 0, 0.0
+    agreement = max(yes_count, no_count) / valid_count
+    strict_consistency = 1.0 if (yes_count == valid_count or no_count == valid_count) else 0.0
+    return agreement, valid_count, strict_consistency
+
+
 async def fetch_agent_identity(endpoint: str) -> dict[str, str]:
     """
     Fetch purple agent card once and return a stable identity payload.
     """
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
             resolver = A2ACardResolver(httpx_client=client, base_url=endpoint)
             card = await resolver.get_agent_card()
         return {
@@ -342,7 +414,7 @@ async def fetch_agent_identity(endpoint: str) -> dict[str, str]:
 
 
 async def call_purple(question: str, purple_url: str, *, streaming: bool = False) -> str:
-    async with httpx.AsyncClient(timeout=60) as httpx_client:
+    async with httpx.AsyncClient(timeout=60, trust_env=False) as httpx_client:
         resolver = A2ACardResolver(httpx_client=httpx_client, base_url=purple_url)
         agent_card = await resolver.get_agent_card()
         config = ClientConfig(httpx_client=httpx_client, streaming=streaming)
@@ -394,21 +466,22 @@ def parse_assessment_request(input_text: str) -> tuple[dict[str, str], dict[str,
 def pick_purple_url(participants: dict[str, str], cfg: dict[str, Any]) -> str:
     """
     Priority:
-      1) participants[qa_agent]
-      2) if only one participant exists -> that endpoint
-      3) cfg["purple_url"]
+      1) cfg["purple_url"] (explicit override; useful when evaluator runs in Docker)
+      2) participants[qa_agent]
+      3) if only one participant exists -> that endpoint
       4) DEFAULT_PURPLE_URL
     """
+    if "purple_url" in cfg and cfg["purple_url"]:
+        return str(cfg["purple_url"])
+
     if DEFAULT_PARTICIPANT_ROLE in participants:
         return str(participants[DEFAULT_PARTICIPANT_ROLE])
 
     if len(participants) == 1:
         return str(next(iter(participants.values())))
 
-    if "purple_url" in cfg and cfg["purple_url"]:
-        return str(cfg["purple_url"])
-
     return DEFAULT_PURPLE_URL
+
 
 def parse_run_config(input_text: str) -> Dict[str, Any]:
     # Accept {"config": {...}} or a plain dict as config.
@@ -457,8 +530,20 @@ class Agent:
         purple_url = pick_purple_url(participants, cfg)
         purple_identity = await fetch_agent_identity(purple_url)
 
+        primary_role = pick_primary_role(participants, DEFAULT_PARTICIPANT_ROLE)
+
+        emit_unit_results = _bool(cfg, "emit_unit_results", True)
+        write_files = _bool(cfg, "write_files", True)
+        run_dir: Optional[Path] = make_run_dir(cfg) if write_files else None
+
         # Decide which datasets to run (default: all)
         dataset_jobs = select_datasets_from_cfg(cfg)
+
+        out_msg = f"Starting evaluation: datasets={len(dataset_jobs)} | purple={purple_url}"
+        if run_dir is not None:
+            out_msg += f" | output_dir={run_dir.as_posix()}"
+        await updater.update_status(TaskState.working, new_agent_text_message(out_msg))
+
 
         # Global (run-time) overrides applied to each dataset run
         runtime_overrides: dict[str, Any] = {}
@@ -468,12 +553,6 @@ class Agent:
             if k in cfg and cfg[k] is not None:
                 runtime_overrides[k] = cfg[k]
 
-        await updater.update_status(
-            TaskState.working,
-            new_agent_text_message(
-                f"Starting evaluation: datasets={len(dataset_jobs)} | purple={purple_url}"
-            ),
-        )
 
         all_summaries: list[dict[str, Any]] = []
         overall_covered = 0
@@ -483,15 +562,23 @@ class Agent:
         overall_tokens_out = 0
         overall_tokens_total = 0
         overall_estimated_cost_total = 0.0
+        overall_agreement_sum = 0.0
+        overall_strict_sum = 0.0
+        overall_consistency_units = 0
+
+        overall_token_seen = False
+
 
         # pricing can be resolved once per run (config-level)
-        pricing = get_pricing(cfg)
+        # pricing = get_pricing(cfg)
 
         # Run each dataset sequentially
         for job_idx, job in enumerate(dataset_jobs, start=1):
             dataset_id = job["dataset"]
             spec_path = job["spec_path"]
             csv_path = job["csv_path"]
+
+            t_dataset_start = time.perf_counter()
 
             # Load spec
             spec = load_json(spec_path)
@@ -535,6 +622,12 @@ class Agent:
             tokens_total = 0
             tokens_by_model: Dict[str, Dict[str, int]] = {}
 
+            agreement_sum = 0.0
+            strict_sum = 0.0
+            consistency_units = 0
+
+            token_seen = False
+
             if input_mode == "structured":
                 validate_structured_spec(spec)
                 min_valid = int(spec["min_valid_answers_per_unit"])
@@ -555,6 +648,7 @@ class Agent:
                         # 2) parse usage (per call)
                         u = parse_usage_json(raw)
                         if u:
+                            token_seen = True
                             in_tok = int(u.get("input_tokens", 0) or 0)
                             out_tok = int(u.get("output_tokens", 0) or 0)
                             tot_tok = int(u.get("total_tokens", in_tok + out_tok) or 0)
@@ -576,6 +670,17 @@ class Agent:
                     gold = normalize_gold(row[gold_col])
                     agg = aggregate_unit(preds_parsed, gold, min_valid=min_valid, tie_policy=tie_policy)
 
+                    # Robustness / consistency metrics (only meaningful for structured)
+                    yes_c = int(agg["counts"]["yes"])
+                    no_c = int(agg["counts"]["no"])
+                    agreement_i, valid_i, strict_i = _consistency_metrics(yes_c, no_c)
+
+                    if agg["is_covered"] and valid_i > 0:
+                        agreement_sum += float(agreement_i)
+                        strict_sum += float(strict_i)
+                        consistency_units += 1
+
+
                     if agg["is_covered"]:
                         covered += 1
                         if agg["majority_correct"]:
@@ -596,6 +701,8 @@ class Agent:
                             "majority_label": agg["majority_label"],
                             "majority_correct": agg["majority_correct"],
                             "is_ambiguous": agg["is_ambiguous"],
+                            "agreement": float(agreement_i),
+                            "strict_consistent": bool(strict_i == 1.0),
                         }
                     )
 
@@ -612,6 +719,7 @@ class Agent:
 
                     u = parse_usage_json(raw)
                     if u:
+                        token_seen = True
                         in_tok = int(u.get("input_tokens", 0) or 0)
                         out_tok = int(u.get("output_tokens", 0) or 0)
                         tot_tok = int(u.get("total_tokens", in_tok + out_tok) or 0)
@@ -654,6 +762,9 @@ class Agent:
             else:
                 raise ValueError(f"Unsupported input_mode: {input_mode}")
 
+            avg_agreement = (agreement_sum / consistency_units) if consistency_units else 0.0
+            strict_consistency_rate = (strict_sum / consistency_units) if consistency_units else 0.0
+
             summary = {
                 "dataset": dataset_id,
                 "task_name": spec.get("task_name"),
@@ -668,91 +779,157 @@ class Agent:
                 "accuracy": (correct / covered) if covered else 0.0,
                 "ambiguous_rate": (ambiguous / covered) if (covered and input_mode == "structured") else 0.0,
                 "invalid_rate": (total_invalid / total_answers) if total_answers else 0.0,
+                "avg_agreement": avg_agreement if input_mode == "structured" else None,
+                "strict_consistency_rate": strict_consistency_rate if input_mode == "structured" else None,
+                "consistency_units": consistency_units if input_mode == "structured" else 0,
             }
 
-            estimated_cost_total = estimate_cost_usd(tokens_in, tokens_out, pricing)
+            # estimated_cost_total = estimate_cost_usd(tokens_in, tokens_out, pricing)
 
-            cost_by_model: Dict[str, float] = {}
-            for m, t in tokens_by_model.items():
-                cost_by_model[m] = estimate_cost_usd(t["input_tokens"], t["output_tokens"], pricing)
+            # cost_by_model: Dict[str, float] = {}
+            # for m, t in tokens_by_model.items():
+                # cost_by_model[m] = estimate_cost_usd(t["input_tokens"], t["output_tokens"], pricing)
 
             summary["purple_usage"] = {
                 "calls": calls,
-                "tokens_input": tokens_in,
-                "tokens_output": tokens_out,
-                "tokens_total": tokens_total,
-                "tokens_by_model": tokens_by_model,
-                "pricing_estimate": pricing,
-                "estimated_cost": {
-                    "currency": pricing.get("currency", "USD"),
-                    "total": estimated_cost_total,
-                    "by_model": cost_by_model,
-                },
+                "tokens_input": tokens_in if token_seen else None,
+                "tokens_output": tokens_out if token_seen else None,
+                "tokens_total": tokens_total if token_seen else None,
+                "tokens_by_model": tokens_by_model if token_seen else None,
             }
 
+
             summary["participant"] = {
-                "role": DEFAULT_PARTICIPANT_ROLE,
+                "role": primary_role,
                 "endpoint": purple_url,
                 "name": purple_identity.get("name", ""),
                 "version": purple_identity.get("version", ""),
             }
 
+            summary["time_used_sec"] = float(time.perf_counter() - t_dataset_start)
+
+            all_summaries.append(summary)
+
+            if token_seen:
+                overall_token_seen = True
+
             overall_calls += calls
             overall_tokens_in += tokens_in
             overall_tokens_out += tokens_out
             overall_tokens_total += tokens_total
-            overall_estimated_cost_total += estimated_cost_total
+            # overall_estimated_cost_total += estimated_cost_total
 
-            all_summaries.append(summary)
+            overall_agreement_sum += agreement_sum
+            overall_strict_sum += strict_sum
+            overall_consistency_units += consistency_units
+
             overall_covered += covered
             overall_correct += correct
 
             # Artifacts per dataset (names include dataset id to avoid collisions)
             unit_jsonl = "\n".join(json.dumps(r, ensure_ascii=False) for r in unit_results)
 
-            emit_unit_results = bool(cfg.get("emit_unit_results", False))
-
             if emit_unit_results:
-                unit_jsonl = "\n".join(json.dumps(r, ensure_ascii=False) for r in unit_results)
                 await updater.add_artifact(
                     parts=[Part(TextPart(text=unit_jsonl))],
                     name=f"{dataset_id}.unit_results.jsonl",
                 )
+                if run_dir is not None:
+                    write_text(run_dir, f"{dataset_id}.unit_results.jsonl", unit_jsonl)
 
             await updater.add_artifact(
                 parts=[Part(TextPart(text=json.dumps(summary, indent=2)))],
                 name=f"{dataset_id}.summary.json",
             )
+            if run_dir is not None:
+                write_json(run_dir, f"{dataset_id}.summary.json", summary)
+
 
         aggregate = {
             "datasets": [s["dataset"] for s in all_summaries],
             "num_datasets": len(all_summaries),
             "micro_accuracy": (overall_correct / overall_covered) if overall_covered else 0.0,
             "micro_covered_units": overall_covered,
-            "purple_usage": {
-                "calls": overall_calls,
-                "tokens_input": overall_tokens_in,
-                "tokens_output": overall_tokens_out,
-                "tokens_total": overall_tokens_total,
-                "pricing_estimate": pricing,
-                "estimated_cost": {
-                    "currency": pricing.get("currency", "USD"),
-                    "total": overall_estimated_cost_total,
-                },
-            },
+            "micro_avg_agreement": (overall_agreement_sum / overall_consistency_units) if overall_consistency_units else 0.0,
+            "micro_strict_consistency_rate": (overall_strict_sum / overall_consistency_units) if overall_consistency_units else 0.0,
+            "micro_consistency_units": overall_consistency_units,
+        }
+
+        aggregate["purple_usage"] = {
+            "calls": overall_calls,
+            "tokens_input": overall_tokens_in if overall_token_seen else None,
+            "tokens_output": overall_tokens_out if overall_token_seen else None,
+            "tokens_total": overall_tokens_total if overall_token_seen else None,
+        }
+
+
+        agg_payload = {"aggregate": aggregate, "per_dataset": all_summaries}
+
+        await updater.add_artifact(
+            parts=[Part(TextPart(text=json.dumps(agg_payload, indent=2)))],
+            name="aggregate.summary.json",
+        )
+        if run_dir is not None:
+            write_json(run_dir, "aggregate.summary.json", agg_payload)
+
+
+        results_payload = {
+            "schema_version": "1.0",
+            "task_name": "perturbation_significance_analysis",
+            "participants": [
+                {
+                    "role": primary_role,
+                    "endpoint": purple_url,
+                    "name": purple_identity.get("name", ""),
+                    "version": purple_identity.get("version", ""),
+                    "card_url": purple_identity.get("url", purple_url),
+                }
+            ],
+            "results": [
+                {
+                    "role": primary_role,
+                    "pass_rate": aggregate["micro_accuracy"],  # as requested: pass_rate=accuracy
+                    "metrics": {
+                        "micro_accuracy": aggregate["micro_accuracy"],
+                        "micro_covered_units": aggregate["micro_covered_units"],
+                        "micro_avg_agreement": aggregate.get("micro_avg_agreement", 0.0),
+                        "micro_strict_consistency_rate": aggregate.get("micro_strict_consistency_rate", 0.0),
+                    },
+                    "usage": aggregate["purple_usage"],
+                    "per_dataset": [
+                        {
+                            "dataset": s["dataset"],
+                            "pass_rate": s.get("accuracy", 0.0),
+                            "metrics": {
+                                "accuracy": s.get("accuracy", 0.0),
+                                "coverage_rate": s.get("coverage_rate", 0.0),
+                                "invalid_rate": s.get("invalid_rate", 0.0),
+                                "ambiguous_rate": s.get("ambiguous_rate", 0.0),
+                                "avg_agreement": s.get("avg_agreement", None),
+                                "strict_consistency_rate": s.get("strict_consistency_rate", None),
+                            },
+                            "usage": s.get("purple_usage") or {},
+                        }
+                        for s in all_summaries
+                    ],
+                }
+            ],
         }
 
         await updater.add_artifact(
-            parts=[Part(TextPart(text=json.dumps({"aggregate": aggregate, "per_dataset": all_summaries}, indent=2)))],
-            name="aggregate.summary.json",
+            parts=[Part(TextPart(text=json.dumps(results_payload, indent=2)))],
+            name="results.json",
         )
+        if run_dir is not None:
+            write_json(run_dir, "results.json", results_payload)
+
 
         # --- leaderboard output ---
         leaderboard_payload = {
             "schema_version": "1.0",
             "task_name": "perturbation_significance_analysis",
             "participant": {
-                "role": DEFAULT_PARTICIPANT_ROLE,
+                "role": primary_role,
                 "endpoint": purple_url,
                 "name": purple_identity.get("name", ""),
                 "version": purple_identity.get("version", ""),
@@ -763,14 +940,16 @@ class Agent:
                 # If you want a single scalar coverage across datasets, use micro_covered_units / total_selected_units.
                 # Here we expose micro_covered_units as-is (objective).
                 "micro_covered_units": aggregate["micro_covered_units"],
+                "micro_avg_agreement": aggregate.get("micro_avg_agreement", 0.0),
+                "micro_strict_consistency_rate": aggregate.get("micro_strict_consistency_rate", 0.0),
             },
             "usage": {
                 "calls": aggregate["purple_usage"]["calls"],
                 "tokens_input": aggregate["purple_usage"]["tokens_input"],
                 "tokens_output": aggregate["purple_usage"]["tokens_output"],
                 "tokens_total": aggregate["purple_usage"]["tokens_total"],
-                "estimated_cost": aggregate["purple_usage"]["estimated_cost"],
-                "pricing_estimate": aggregate["purple_usage"]["pricing_estimate"],
+                # "estimated_cost": aggregate["purple_usage"]["estimated_cost"],
+                # "pricing_estimate": aggregate["purple_usage"]["pricing_estimate"],
             },
             # Keep per-dataset scores in a compact, stable form.
             "per_dataset": [
@@ -783,6 +962,8 @@ class Agent:
                     "units_selected": s.get("units_selected", 0),
                     # optional: include per-dataset tokens/cost if present
                     "usage": (s.get("purple_usage") or {}),
+                    "avg_agreement": s.get("avg_agreement", None),
+                    "strict_consistency_rate": s.get("strict_consistency_rate", None),
                 }
                 for s in all_summaries
             ],
@@ -792,5 +973,7 @@ class Agent:
             parts=[Part(TextPart(text=json.dumps(leaderboard_payload, indent=2)))],
             name="leaderboard.json",
         )
+        if run_dir is not None:
+            write_json(run_dir, "leaderboard.json", leaderboard_payload)
 
         await updater.update_status(TaskState.completed, new_agent_text_message("Evaluation complete."))

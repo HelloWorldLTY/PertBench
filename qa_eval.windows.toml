@@ -1,0 +1,16 @@
+[green_agent]
+endpoint = "http://127.0.0.1:9009"
+cmd = "docker run --rm -p 9009:9009 -v D:/PhD/git/PertBench/GreenAgent/example:/home/agent/example -v D:/PhD/git/PertBench/artifacts:/home/agent/artifacts pertbench-greenagent:dev --host 0.0.0.0 --port 9009 --card-url http://127.0.0.1:9009/"
+
+[[participants]]
+role = "qa_agent"
+endpoint = "http://host.docker.internal:9011"
+cmd = "cmd /c \"cd /d D:/PhD/git/PertBench/PurpleAgent && uv run python src/server.py --host 0.0.0.0 --port 9011 --card-url http://host.docker.internal:9011/\""
+
+[config]
+dataset = "adamson_psa_single"
+max_units = 5
+random_seed = 0
+emit_unit_results = true
+write_files = true
+output_dir = "/home/agent/artifacts"

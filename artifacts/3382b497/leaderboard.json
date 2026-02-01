@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "task_name": "perturbation_significance_analysis",
+  "participant": {
+    "role": "qa_agent",
+    "endpoint": "http://host.docker.internal:9011/",
+    "name": "openai-4o-mini",
+    "version": "1.0.0",
+    "card_url": "http://host.docker.internal:9011/"
+  },
+  "scores": {
+    "micro_accuracy": 0.2,
+    "micro_covered_units": 5,
+    "micro_avg_agreement": 1.0,
+    "micro_strict_consistency_rate": 1.0
+  },
+  "usage": {
+    "calls": 50,
+    "tokens_input": 3509,
+    "tokens_output": 250,
+    "tokens_total": 3759,
+    "estimated_cost": {
+      "currency": "USD",
+      "total": 0.0013526999999999999
+    },
+    "pricing_estimate": {
+      "currency": "USD",
+      "input_per_1m": 0.3,
+      "output_per_1m": 1.2
+    }
+  },
+  "per_dataset": [
+    {
+      "dataset": "adamson_psa_single",
+      "accuracy": 0.2,
+      "coverage_rate": 1.0,
+      "invalid_rate": 0.0,
+      "ambiguous_rate": 0.0,
+      "units_selected": 5,
+      "usage": {
+        "calls": 50,
+        "tokens_input": 3509,
+        "tokens_output": 250,
+        "tokens_total": 3759,
+        "tokens_by_model": {
+          "gpt-4o-mini": {
+            "input_tokens": 3509,
+            "output_tokens": 250,
+            "total_tokens": 3759
+          }
+        },
+        "pricing_estimate": {
+          "currency": "USD",
+          "input_per_1m": 0.3,
+          "output_per_1m": 1.2
+        },
+        "estimated_cost": {
+          "currency": "USD",
+          "total": 0.0013526999999999999,
+          "by_model": {
+            "gpt-4o-mini": 0.0013526999999999999
+          }
+        }
+      },
+      "avg_agreement": 1.0,
+      "strict_consistency_rate": 1.0
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "dataset": "adamson_psa_single",
+  "task_name": "single_perturbation_significance_analysis",
+  "input_mode": "structured",
+  "csv_path": "example/data/adamson_psa_single.csv",
+  "spec_path": "example/config/perturbation_analysis_prompts_single.json",
+  "purple_url": "http://host.docker.internal:9011/",
+  "units_total": 516,
+  "units_selected": 5,
+  "covered_units": 5,
+  "coverage_rate": 1.0,
+  "accuracy": 0.2,
+  "ambiguous_rate": 0.0,
+  "invalid_rate": 0.0,
+  "avg_agreement": 1.0,
+  "strict_consistency_rate": 1.0,
+  "consistency_units": 5,
+  "purple_usage": {
+    "calls": 50,
+    "tokens_input": 3509,
+    "tokens_output": 250,
+    "tokens_total": 3759,
+    "tokens_by_model": {
+      "gpt-4o-mini": {
+        "input_tokens": 3509,
+        "output_tokens": 250,
+        "total_tokens": 3759
+      }
+    }
+  },
+  "participant": {
+    "role": "qa_agent",
+    "endpoint": "http://host.docker.internal:9011/",
+    "name": "openai-4o-mini",
+    "version": "1.0.0"
+  },
+  "time_used_sec": 41.96989945599853
+}

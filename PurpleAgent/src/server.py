@@ -1,5 +1,6 @@
 import argparse
 import uvicorn
+import os
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -14,6 +15,15 @@ from executor import Executor
 
 
 def main():
+    # Read model + optional card overrides from env
+    model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    default_card_name = f"openai-{model_name}"
+    default_card_desc = f"OpenAI {model_name} LLM-only Agent"
+
+    card_name = os.environ.get("AGENT_CARD_NAME", default_card_name).strip() or default_card_name
+    card_desc = os.environ.get("AGENT_CARD_DESC", default_card_desc).strip() or default_card_desc
+    card_version = os.environ.get("AGENT_CARD_VERSION", "1.0.0").strip() or "1.0.0"
+
     parser = argparse.ArgumentParser(description="Run the A2A agent.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server")
     parser.add_argument("--port", type=int, default=9010, help="Port to bind the server")
@@ -32,10 +42,10 @@ def main():
     )
 
     agent_card = AgentCard(
-        name="openai-4o-mini",
-        description="OpenAI GPT-4o-mini LLM-only Agent",
+        name=card_name,
+        description=card_desc,
         url=args.card_url or f"http://{args.host}:{args.port}/",
-        version='1.0.0',
+        version=card_version,
         default_input_modes=['text'],
         default_output_modes=['text'],
         capabilities=AgentCapabilities(streaming=True),
