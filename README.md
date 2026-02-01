@@ -53,7 +53,7 @@ GreenAgent/
 
 ## Datasets and Specification Files
 
-**Datasets(**`example/data/`**)**:
+**Datasets(`example/data/`)**:
 
 - `adamson_psa_single.csv`
 - `norman_psa_single.csv`
@@ -84,10 +84,10 @@ The Green Agent receives an A2A assessment request from the AgentBeats runner an
 
 We report:
 
-- Coverage: fraction of units that are considered *covered* (i.e., have at least `min_valid_answers_per_unit` valid predictions)
-- Accuracy: fraction correct among covered units
-- Ambiguous rate: fraction of *covered* units whose majority vote is `Ambiguous` (only meaningful when `tie = "Ambiguous"` in structured mode)
-- Invalid rate: invalid answers divided by total answers across all calls (template-level invalids)
+- **Coverage**: fraction of units that are considered *covered* (i.e., have at least `min_valid_answers_per_unit` valid predictions)
+- **Accuracy**: fraction correct among covered units
+- **Ambiguous rate**: fraction of *covered* units whose majority vote is `Ambiguous` (only meaningful when `tie = "Ambiguous"` in structured mode)
+- **Invalid rate**: invalid answers divided by total answers across all calls (template-level invalids)
 
 We also compute micro accuracy across all datasets:
 
@@ -95,7 +95,7 @@ We also compute micro accuracy across all datasets:
 micro_accuracy = total_correct / total_covered
 ```
 
-**Usage accounting (optional).**
+**Usage accounting (Optional).**
 
 If the Purple Agent returns usage metadata in its text output as a `USAGE_JSON: {...}` line, the Green Agent aggregates:
 
