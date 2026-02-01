@@ -12,7 +12,7 @@ This benchmark tests whether an agent can correctly answer gene perturbation QA 
 - “In X cells, gene A and gene B are perturbed and gene C expression is quantified. Does this perturbation result in a significant change in gene C expression compared with control cells?”
 
 It measures:
-- **Correctness**: accuracy vs. gold labels
+- **Correctness**: Accuracy (predicted vs. gold labels)
 
 - **Robustness**: invalid / ambiguous outputs (especially under multi-template voting)
 
@@ -20,7 +20,7 @@ It measures:
 
 ## Key features
 
-- **Multiple datasets** supported (single & double perturbation)
+- **Multiple datasets** supported (single & double perturbations under different scales)
 
 - **A2A-native integration**: reads Purple Agent identity from  `/.well-known/agent-card.json`
 
